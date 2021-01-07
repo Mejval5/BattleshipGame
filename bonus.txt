@@ -1,0 +1,6 @@
+Implement a simple graphical client based on the API from the main
+specification. You can use pygame or pyglet for this. Specifics are
+up to you. I will ask you to submit a short demo video in addition
+to the code (presumably through the IS, I will post the details in
+the DF). You can earn 1.5 points for this extension. The deadline is
+30th of January.

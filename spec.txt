@@ -1,0 +1,120 @@
+Implement the 'battleship' guessing game using the principles from
+hw4: an asyncio server which listens on a unix socket and a protocol
+based on the grammar from hw3.
+
+The basic spec does not include user interaction, just an API.  You
+can do a user interface as a bonus (see ‹bonus.txt›).  The game is
+encapsulated in an object of class Battleship, which has methods
+described in the following. The game is played on a 10x10 board.
+
+Initial game setup:
+
+ • ‹connect(nick)› where ‹nick› is a string without newlines
+ • ‹put_ship( x, y, size, vertical )› puts a ship of a given size at
+   position x, y where x is the column and y is the row, with (0, 0)
+   being the upper left corner; if ‹vertical› is True, then the ship
+   extends downwards, and if it is False, it extends to the right
+   ... this method must be called exactly 5 times before ‹start()›
+   or ‹join()› are called, with sizes 5, 4, 3, 3, 2 (in any order)
+ • ‹start()› announces a new game on the server and waits for the
+   second player to join
+ • ‹list_games()› returns a list of nicks (strings) of players who
+   announced a game and are waiting for the second player to join;
+   each subsequent call blocks until the list changes since the last
+   call; never returns an empty list (i.e. blocks until it can
+   return a non-empty list)
+ • ‹auto()› joins a random game, or starts a new one if there are no
+   active offers; it blocks until a game can start
+ • ‹join(nick)› joins a game announced by ‹nick›
+
+When two players pair up, other clients should become aware (as soon
+as practical) that the game is no longer on offer; disappearance of
+games should be reflected by ‹list_games()›. Nonetheless, there is
+an inherent race condition and multiple players may try to join the
+same game. One of them must be accepted by the initiator and the
+rest must be rejected.
+
+Gameplay: one shot is fired by each side in a round. The shots are
+simultaneous. Methods which implement the gameplay:
+
+ • ‹enemy()› returns the state of the enemy board, as a list of
+   lists (each row is represented by a single list)... the cells are
+   encoded as 'h' for hit, 'm' for miss and '?' for unknown
+ • ‹board()› the same format but for the player's own board; instead
+   of '?', the cell might be 'w' for water or 's' for ship
+ • ‹round( x, y )› play one round, shooting at ‹(x, y)›
+ • ‹finished()› returns True if the game is over
+ • ‹won()› returns True if we won
+ • ‹draw()› returns True if the game ended in a draw
+ • ‹aborted()› returns True if the game was aborted
+
+After the game concludes, calling ‹restart()› keeps the connection
+to the server open, but wipes all other state. Ships can be laid out
+again and a new game can be joined or initiated. All initialization
+methods except ‹put_ship› are async, as is the ‹round()› method are
+(i.e. they are coroutines). All other methods are standard
+subroutines.
+
+Multiple games may be played on the same server at the same time and
+they must not interfere with each other.
+
+The basic protocol is as follows:
+
+ • games are identified by an integer, assigned by the server,
+ • the command ‹(nick "foo" "salt")› must be sent by the client upon
+   connection, and the server must reply ‹(ok "salt")› unless
+   the nick is already taken (in which case it should say ‹(error
+   "message")›),
+ • ‹(start "hash")› can be issued by any client at any time; the
+   server replies ‹(started 123)› where 123 is an identifier of the
+   new game,
+ • ‹(join 123 "hash")› can be issued by clients to join a game given
+   by the identifier,
+ • ‹(list)› replies with a list of games, both running and waiting,
+   in this format:
+   
+       (games (active "nick1" "nick2" 123)
+              (waiting "nick" 124)
+              (waiting "another nick" 521)) 
+   
+ • ‹(shoot 123 7 2)› plays a round in game id 123, hitting at
+   opponent's square in column 7 and row 2; the server forwards the
+   message to the other player, which replies ‹(hit 123)› or ‹(miss
+   123)› and the server forwards the reply to the first player; if
+   it is not the player's turn, the server does not forward anything
+   and replies with ‹error›; likewise if the player is not part of
+   game 123;
+ • the server keeps track of the ‹hit› count on each player; if
+   either player loses, the server will immediately notify both
+   players with ‹(end 123 "nick of winner")›,
+ • in reply to the ‹end› message, both parties must submit their
+   original ship layout to the server, in this format:
+
+       (layout 123 (ship 5 0 0 horizontal)
+                   (ship 4 5 5 vertical)
+                   (ship 3 6 5 vertical)
+                   (ship 3 8 5 vertical)
+                   (ship 2 9 9 horiznontal))
+    
+    the order of ships is mandatory, the first argument is the size
+    of the ship and the other two numbers are the x and y
+    coordinates of the top/left square of the ship; the server
+    verifies the hashes and hits and either declares ‹(game ok)› or
+    ‹(game aborted)› followed by:
+
+    ◦ 1 or 2 messages ‹(hash-mismatch 123 "nick")›, and/or
+    ◦ 1 or 2 messages ‹(board-mismatch 123 "nick")›
+
+    (all server to client messages under this point are sent to both
+    participants)
+
+The hashes are computed by hashing the salt sent by the client, the
+salt sent by the server and the ship layout. The exact algorithm is
+up to you (sha1 is fine), as long as the server and the clients do
+the same thing. The hash prevents cheating: the server does not
+learn the layout until after the game ends, but the client cannot
+change their ship positions to avoid hits. Make the hashing
+algorithm available as ‹common.hash_game(server_salt, client_salt,
+ships)› where ‹ships› is a list of 3-tuples ‹(x, y, vertical)› (2
+‹int›'s and a ‹bool›), ordered by decreasing ship size. The size 3
+ships are ordered by their coordinates, smaller (x, y) coming first.
