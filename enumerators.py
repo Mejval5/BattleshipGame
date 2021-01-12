@@ -12,8 +12,9 @@ class PlayerType(Enum):
     PEER = 'peer'
 
 class GameState(Enum):
-    WAITING = 0
-    ACTIVE = 1
+    WAITING = "waiting"
+    ACTIVE = "active"
+    ENDED = "ended"
 
 class BoardFieldType(Enum):
     WATER = 'w'

@@ -19,25 +19,22 @@ def convert_message_to_command(client, message):
     if client.state == PlayerState.SENDING_LAYOUT:
         return while_game_ended(client, parsed_message)
 
-    return ErrorCommand(client, "logged in")
+    return ErrorCommand(client, "client has no state")
 
 def while_not_logged(client, parsed_message):
-    success, nick, salt = split_nick_command(parsed_message)
-    if success:
-        return LogInCommand(client, nick, salt)
-    else:
-        return ErrorCommand(client)
-
-def split_nick_command(parsed_message):
     fingerprint = NickParseFingerPrint(parsed_message)
-    return fingerprint.is_valid(), fingerprint.get_nick(), fingerprint.get_salt()
+    if fingerprint.is_valid():
+        return LogInCommand(client, fingerprint.get_nick(), fingerprint.get_salt())
+    else:
+        return ErrorCommand(client, "could not log in")
+
 
 def while_placing_ships(client, parsed_message):
     fingerprint = PutShipParseFingerPrint(parsed_message)
     if fingerprint.is_valid():
-        return client.player.add_ship_to_board(*fingerprint.get_params())
-    else:
-        return ErrorCommand(client)
+        if client.player.add_ship_to_board(*fingerprint.get_params()):
+            return MessageCommand(client ,"Ship placed")
+    return ErrorCommand(client, "could not parse ship placement")
 
 def while_game_ended(client, parsed_message):
     fingerprint = LayoutParseFingerPrint(parsed_message)
@@ -46,9 +43,13 @@ def while_game_ended(client, parsed_message):
         game = Battleship().get_game_by_id(game_id)
         if game is not None:
             return game.check_for_cheating_by_layout(client.player, fingerprint.get_layout())
-    return ErrorCommand(client)
+    return ErrorCommand(client, "layout not parsed")
 
 def while_in_lobby(client, parsed_message):
+    start_attempt = try_to_start(client, parsed_message)
+    if start_attempt is not None:
+        return start_attempt
+
     join_attempt = try_to_join(client, parsed_message)
     if join_attempt is not None:
         return join_attempt
@@ -60,7 +61,19 @@ def while_in_lobby(client, parsed_message):
     list_attempt = try_to_list(client, parsed_message)
     if list_attempt is not None:
         return list_attempt
-    
+
+    return ErrorCommand(client, "could not join or start game")
+        
+    def try_to_start(client, parsed_message):
+        fingerprint = StartParseFingerPrint(parsed_message)
+        if fingerprint.is_valid():
+            return Battleship.start_game(client, fingerprint.get_hash())       
+        
+    def try_to_list(client, parsed_message):
+        fingerprint = ListParseFingerPrint(parsed_message)
+        if fingerprint.is_valid():
+            return Battleship.list_games(client)
+
     def try_to_join(client, parsed_message):
         fingerprint = JoinParseFingerPrint(parsed_message)
         if fingerprint.is_valid():
@@ -68,12 +81,8 @@ def while_in_lobby(client, parsed_message):
             game = Battleship().get_game_by_id(game_id)
             _hash = fingerprint.get_hash
             if game is not None:
-                return game.join_peer(client.player, _hash)
-        
-    def try_to_list(client, parsed_message):
-        fingerprint = ListParseFingerPrint(parsed_message)
-        if fingerprint.is_valid():
-            return Battleship.list_games()
+                return game.join_peer(client, _hash)
+
     
     def try_to_auto(client, parsed_message):
         fingerprint = AutoParseFingerPrint(parsed_message)
@@ -116,7 +125,7 @@ def while_playing(client, parsed_message):
                 return client.player.shoot(fingerprint.get_x, fingerprint.get_y, game_id)
 
 def get_hash(server_salt, client_salt, ships):
-    pass
+    return 1
 
 
 # Battleship main class
@@ -133,13 +142,17 @@ class Singleton(type):
 class Battleship(metaclass=Singleton):
 
     def __init__(self):
-        self.game_server = None
+        self.game_server = Server()
         self.server_salt = random.randint(0,999999999999999999999)
         self.players = set()
         self.games = set()
 
-    def list_games(self):
-        pass
+    def list_games(self, client):
+        message ="(games"
+        for g in self.games:
+            message += " " + g.game_to_text
+        message += ")"
+        return MessageCommand(client, message)
 
     def get_player_by_nick(self, nick):
         for p in self.players:
@@ -150,6 +163,12 @@ class Battleship(metaclass=Singleton):
         for g in self.games:
             if g.id == id:
                 return g
+
+    def remove_game(self, game):
+        for g in self.games:
+            if g.id == game.id:
+                self.games.remove(g)
+                del g
 
     def add_player(self, player):
         self.players.add(player)
@@ -168,12 +187,16 @@ class Battleship(metaclass=Singleton):
     def get_first_free_game_by_nick(self, nick):
         pass
 
-    def get_auto_game(self, client):
-        pass
+    def get_auto_game(self, client, _hash):
+        for g in self.games:
+            if g.state == GameState.WAITING:
+                return g.join_peer(client, _hash)
+        return self.start_game(client, _hash)
 
-    def start_game(self, client, hash):
-        pass
-
+    def start_game(self, client, _hash):
+        game = Game(client, _hash)
+        self.games.add(game)
+        return MessageCommand(client, "Game Started, ID: " + game.id)
 
 
 
@@ -188,6 +211,9 @@ from lisp import *
 from fingerprints import *
 from enumerators import *
 from communication import *
+from game_classes import *
+from shipserv import *
 
 windows = True
 
+asyncio.run(Battleship().game_server.start_server())

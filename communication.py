@@ -1,6 +1,6 @@
 
 # Command systems
-
+windows = True
 
 class Command():
 
@@ -191,7 +191,6 @@ class Message():
         async with self.client._drain_lock:
             await self.client.writer.drain()
 
-
 class SaltMessage(Message):
     
     def __init__(self, client, salt):
@@ -224,5 +223,5 @@ class MessageReader():
         else:
             return data.decode().rstrip("\n")
 
-from common import Battleship, windows, get_hash
+from common import *
 from game_classes import Player, Ship

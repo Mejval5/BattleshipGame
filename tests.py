@@ -1,6 +1,8 @@
 from lisp import parse
-expr = parse("(start \"hash\")")
-jjj = ""
+expr = parse("(nick \"foo\" \"salt\")")
 for item in expr.tokens:
     jjj = jjj + str(type(item)).replace("classes.", "").replace("<class", "").replace("'", "").replace(">", "") + ","
-print(jjj)
+print(expr._children)
+
+
+
