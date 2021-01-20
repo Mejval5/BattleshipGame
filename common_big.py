@@ -474,7 +474,7 @@ class ErrorMessage(Message):
         self.send_message_async()
         
     def get_error_message(self, error=""):
-        if error:
+        if error and windows:
             error_message = f"error {error}!"
         else:
             error_message = "error"
