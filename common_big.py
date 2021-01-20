@@ -8,7 +8,7 @@ import re
 import copy
 
 # Command systems
-windows = True
+windows = False
 
 def hash_game(server_salt, client_salt, ships):
     string = str(server_salt) + str(client_salt) + str(ships)
